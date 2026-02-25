@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=360">
+  <link rel="stylesheet" href="popup.css">
+  <title>AWS Console Time Keeper</title>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Time Keeper</h1>
+      <span id="service-badge" class="badge">--</span>
+    </header>
+
+    <!-- Current Time Range -->
+    <section id="current-section" class="section">
+      <div id="empty-state" class="empty-state">
+        No time range captured yet.<br>
+        Navigate to a supported AWS service and click <strong>Capture</strong>.
+      </div>
+      <div id="time-display" class="time-display hidden">
+        <div class="time-row">
+          <span class="label">Start</span>
+          <span id="start-time" class="value">--</span>
+        </div>
+        <div class="time-row">
+          <span class="label">End</span>
+          <span id="end-time" class="value">--</span>
+        </div>
+        <div class="time-row">
+          <span class="label">Duration</span>
+          <span id="duration" class="value">--</span>
+        </div>
+        <div class="time-row">
+          <span class="label">Source</span>
+          <span id="source" class="value">--</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Action Buttons -->
+    <section class="actions">
+      <button id="btn-capture" class="btn btn-primary">Capture</button>
+      <button id="btn-apply" class="btn btn-secondary">Apply</button>
+      <button id="btn-clear" class="btn btn-danger">Clear</button>
+    </section>
+
+    <!-- Manual Input -->
+    <details class="collapsible">
+      <summary>Manual Input</summary>
+      <div class="collapsible-content">
+        <div class="form-group">
+          <label for="manual-start">Start</label>
+          <input type="datetime-local" id="manual-start" step="1">
+        </div>
+        <div class="form-group">
+          <label for="manual-end">End</label>
+          <input type="datetime-local" id="manual-end" step="1">
+        </div>
+        <button id="btn-manual-save" class="btn btn-primary btn-full">Save Manual Range</button>
+      </div>
+    </details>
+
+    <!-- History -->
+    <details class="collapsible">
+      <summary>History <span id="history-count" class="badge-small">0</span></summary>
+      <div class="collapsible-content">
+        <div id="history-list" class="history-list">
+          <div class="empty-state-small">No history yet.</div>
+        </div>
+      </div>
+    </details>
+
+    <!-- Footer -->
+    <footer>
+      <span class="shortcut">Capture: <kbd>Alt+Shift+C</kbd></span>
+      <span class="shortcut">Apply: <kbd>Alt+Shift+A</kbd></span>
+    </footer>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

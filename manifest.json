@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "AWS Console Time Keeper",
+  "version": "1.0.0",
+  "description": "Capture and apply time ranges across AWS Console services during incident investigation",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["https://*.console.aws.amazon.com/*"],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.console.aws.amazon.com/*"],
+      "js": ["lib/jsurl.js", "content/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "commands": {
+    "capture-time": {
+      "suggested_key": {
+        "default": "Alt+Shift+C"
+      },
+      "description": "Capture current time range"
+    },
+    "apply-time": {
+      "suggested_key": {
+        "default": "Alt+Shift+A"
+      },
+      "description": "Apply saved time range"
+    }
+  }
+}

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AWS Console Time Keeper - Icon Generator</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      background: #1a1a2e;
+      color: #e0e0e0;
+    }
+    .preview {
+      display: flex;
+      gap: 20px;
+      align-items: end;
+      margin: 20px 0;
+    }
+    .preview div {
+      text-align: center;
+    }
+    canvas {
+      border: 1px solid #333;
+      image-rendering: pixelated;
+    }
+    button {
+      padding: 10px 20px;
+      background: #FF9900;
+      color: #000;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+    button:hover { background: #e68a00; }
+    .label { font-size: 12px; color: #888; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Icon Generator</h1>
+  <p>Click the button to generate and download all icon sizes.</p>
+
+  <div class="preview">
+    <div>
+      <canvas id="c128" width="128" height="128"></canvas>
+      <div class="label">128x128</div>
+    </div>
+    <div>
+      <canvas id="c48" width="48" height="48"></canvas>
+      <div class="label">48x48</div>
+    </div>
+    <div>
+      <canvas id="c16" width="16" height="16"></canvas>
+      <div class="label">16x16</div>
+    </div>
+  </div>
+
+  <button onclick="downloadAll()">Download All Icons</button>
+
+  <script>
+    var sizes = [128, 48, 16];
+
+    function drawIcon(canvas) {
+      var s = canvas.width;
+      var ctx = canvas.getContext("2d");
+      var r = s / 2;
+      var cx = r, cy = r;
+
+      // Clear
+      ctx.clearRect(0, 0, s, s);
+
+      // Background circle (dark)
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.9, 0, Math.PI * 2);
+      ctx.fillStyle = "#1a1a2e";
+      ctx.fill();
+
+      // Border ring (AWS orange)
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.9, 0, Math.PI * 2);
+      ctx.strokeStyle = "#FF9900";
+      ctx.lineWidth = Math.max(1, s * 0.06);
+      ctx.stroke();
+
+      // Clock face (subtle)
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.75, 0, Math.PI * 2);
+      ctx.fillStyle = "#16213e";
+      ctx.fill();
+
+      // Hour ticks
+      for (var i = 0; i < 12; i++) {
+        var angle = (i * 30 - 90) * Math.PI / 180;
+        var inner = r * 0.62;
+        var outer = r * 0.72;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
+        ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
+        ctx.strokeStyle = "#a0a0b0";
+        ctx.lineWidth = Math.max(1, s * 0.025);
+        ctx.stroke();
+      }
+
+      // Center dot
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.max(1, s * 0.04), 0, Math.PI * 2);
+      ctx.fillStyle = "#FF9900";
+      ctx.fill();
+
+      // Hour hand (pointing to 10 o'clock position)
+      var hourAngle = (300 - 90) * Math.PI / 180;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(hourAngle) * r * 0.4, cy + Math.sin(hourAngle) * r * 0.4);
+      ctx.strokeStyle = "#e0e0e0";
+      ctx.lineWidth = Math.max(1, s * 0.055);
+      ctx.lineCap = "round";
+      ctx.stroke();
+
+      // Minute hand (pointing to 2 o'clock position)
+      var minAngle = (60 - 90) * Math.PI / 180;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(minAngle) * r * 0.58, cy + Math.sin(minAngle) * r * 0.58);
+      ctx.strokeStyle = "#FF9900";
+      ctx.lineWidth = Math.max(1, s * 0.04);
+      ctx.lineCap = "round";
+      ctx.stroke();
+    }
+
+    // Draw all on load
+    sizes.forEach(function(s) {
+      drawIcon(document.getElementById("c" + s));
+    });
+
+    function downloadAll() {
+      sizes.forEach(function(s) {
+        var canvas = document.getElementById("c" + s);
+        var link = document.createElement("a");
+        link.download = "icon" + s + ".png";
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      });
+    }
+  </script>
+</body>
+</html>
