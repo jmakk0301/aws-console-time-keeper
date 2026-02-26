@@ -29,16 +29,22 @@
       return "cloudwatch-logs-insights";
     }
     // Broader match for Logs Insights (different URL patterns across regions)
-    if (pathname.includes("/cloudwatch") && (hash.includes("logs-insights") || hash.includes("logsV2") && hash.includes("queryDetail"))) {
+    // queryDetail may appear as literal or $3D-encoded
+    if (pathname.includes("/cloudwatch") && (hash.includes("logs-insights") || hash.includes("logsV2") && (hash.includes("queryDetail") || hash.includes("queryDetail$3D")))) {
       return "cloudwatch-logs-insights";
+    }
+    // CloudWatch Log Events: logsV2:log-groups with $3Fstart$3D pattern
+    if (pathname.includes("/cloudwatch") && hash.includes("logsV2:log-groups") && (hash.includes("$3Fstart$3D") || hash.includes("?start="))) {
+      return "cloudwatch-logs";
     }
     if (pathname.includes("/xray") || pathname.includes("/x-ray")) {
       return "xray";
     }
     if (pathname.includes("/cloudwatch")) {
-      // Generic CloudWatch pages with JSURL state after ':?'
-      // e.g. #home:?~(timeRange~1814400000)  or  #home:?~(timeRange~181440000
-      if (hash.includes(":?~(")) {
+      // Generic CloudWatch pages with JSURL state after '?'
+      // e.g. #home:?~(timeRange~1814400000)
+      //      #home:dashboards/ApplicationELB?~(timeRange~43200000)
+      if (hash.includes("?~(")) {
         return "cloudwatch-generic";
       }
       return "cloudwatch-other";
@@ -52,6 +58,26 @@
   // ---------------------------------------------------------------------------
   // Parsers
   // ---------------------------------------------------------------------------
+
+  /**
+   * Format epoch ms as ISO-like datetime string in JST (no timezone suffix).
+   * AWS Console expects local time strings without 'Z' in many places.
+   * e.g. "2025-02-26T09:30:00.000"
+   */
+  function toJSTString(epochMs) {
+    var s = new Intl.DateTimeFormat("sv-SE", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+      timeZone: "Asia/Tokyo",
+    }).format(new Date(epochMs));
+    // "sv-SE" gives "YYYY-MM-DD HH:MM:SS" → convert to ISO-like format
+    return s.replace(" ", "T") + ".000";
+  }
 
   /**
    * Parse ISO 8601 duration (e.g., PT3H, PT1H30M) to milliseconds.
@@ -140,25 +166,40 @@
 
   /**
    * CloudWatch Logs Insights parser.
-   * URL hash contains queryDetail=<encoded> where encoding is:
-   *   JSURL → encodeURIComponent → replace('%', '$')
+   * Two URL hash formats:
+   *   Format A: queryDetail=<$-encoded JSURL>  (= is literal, value is $→% encoded)
+   *   Format B: queryDetail$3D<raw JSURL>       (= is $3D-encoded, value is raw JSURL)
    */
   function parseCloudWatchLogsInsights() {
     try {
       var hash = window.location.hash;
-      var qdMatch = hash.match(/queryDetail=([^&;]*)/);
-      if (!qdMatch) return null;
+      var obj = null;
 
-      // Reverse the $→% encoding
-      var encoded = qdMatch[1].replace(/\$/g, "%");
-      var decoded = decodeURIComponent(encoded);
-      var obj = window.JSURL.tryParse(decoded, null);
+      // Format A: queryDetail=<$-encoded value>
+      var qdMatchA = hash.match(/queryDetail=([^&;]*)/);
+      if (qdMatchA) {
+        var encoded = qdMatchA[1].replace(/\$/g, "%");
+        try {
+          var decoded = decodeURIComponent(encoded);
+          obj = window.JSURL.tryParse(decoded, null);
+        } catch (e) {}
+      }
+
+      // Format B: queryDetail$3D<raw JSURL>
+      if (!obj) {
+        var qdMatchB = hash.match(/queryDetail\$3D([^&;]*)/i);
+        if (qdMatchB) {
+          obj = window.JSURL.tryParse(qdMatchB[1], null);
+        }
+      }
+
       if (!obj) return null;
 
       var result = { source: "CloudWatch Logs Insights" };
 
       // timeType: "RELATIVE" or "ABSOLUTE"
-      if (obj.start && obj.end) {
+      // Note: end can be 0 (meaning "now" in relative mode), so use != null instead of truthiness
+      if (obj.start != null && obj.end != null) {
         if (obj.timeType === "RELATIVE" || (typeof obj.start === "number" && obj.start < 0)) {
           // Relative: start is negative seconds from now
           var startSec = typeof obj.start === "number" ? obj.start : parseInt(obj.start, 10);
@@ -244,6 +285,49 @@
   }
 
   /**
+   * CloudWatch Log Events parser.
+   * Hash: #logsV2:log-groups/log-group/<group>/log-events/<stream>$3Fstart$3D<time>$26end$3D<time>
+   * Decoded: ?start=<ms>&end=<ms>
+   * start/end: negative = relative ms from now, large positive = epoch ms
+   */
+  function parseCloudWatchLogs() {
+    try {
+      var hash = window.location.hash;
+      // Normalize $-encoded delimiters
+      var normalized = hash.replace(/\$3F/gi, "?").replace(/\$3D/gi, "=").replace(/\$26/gi, "&");
+
+      var startMatch = normalized.match(/[?&]start=(-?\d+)/);
+      if (!startMatch) return null;
+
+      var startVal = parseInt(startMatch[1], 10);
+      var endVal = null;
+      var endMatch = normalized.match(/[?&]end=(-?\d+)/);
+      if (endMatch) endVal = parseInt(endMatch[1], 10);
+
+      var result = { source: "CloudWatch Logs" };
+      var now = Date.now();
+
+      if (startVal < 0) {
+        // Relative: negative milliseconds from now
+        result.start = now + startVal;
+        result.end = endVal != null && endVal < 0 ? now + endVal : now;
+        result.raw = { type: "relative", startMs: startVal, endMs: endVal };
+      } else {
+        // Absolute: epoch milliseconds
+        result.start = startVal;
+        result.end = endVal != null ? endVal : now;
+        result.raw = { type: "absolute" };
+      }
+
+      if (isNaN(result.start) || isNaN(result.end)) return null;
+      return result;
+    } catch (e) {
+      console.warn("[TimeKeeper] CloudWatch Logs parse error:", e);
+      return null;
+    }
+  }
+
+  /**
    * CloudWatch Generic parser.
    * Many CloudWatch pages use hash format: #<section>:?~(<jsurl-state>)
    * e.g. #home:?~(timeRange~1814400000)
@@ -255,11 +339,12 @@
   function parseCloudWatchGeneric() {
     try {
       var hash = window.location.hash;
-      // Split at ':?' to get the JSURL state portion
-      var sepIdx = hash.indexOf(":?");
-      if (sepIdx < 0) return null;
-      var stateStr = hash.substring(sepIdx + 2); // everything after ':?'
-      if (!stateStr || !stateStr.startsWith("~(")) return null;
+      // Find '?~(' to locate JSURL state in hash
+      // e.g. #home:?~(...)  or  #home:dashboards/Foo?~(...)
+      var qIdx = hash.indexOf("?~(");
+      if (qIdx < 0) return null;
+      var stateStr = hash.substring(qIdx + 1); // everything after '?'
+      if (!stateStr) return null;
 
       var stateObj = window.JSURL.tryParse(stateStr, null);
       if (!stateObj || stateObj.timeRange === undefined) return null;
@@ -273,8 +358,13 @@
         result.start = now - tr;
         result.end = now;
         result.raw = { type: "relative", durationMs: tr };
+      } else if (Array.isArray(tr) && tr.length === 2) {
+        // Absolute: [startEpochMs, endEpochMs]
+        result.start = tr[0];
+        result.end = tr[1];
+        result.raw = { type: "absolute-array" };
       } else if (typeof tr === "object" && tr.start && tr.end) {
-        // Absolute: start/end as ISO strings or epoch
+        // Absolute: { start, end } as ISO strings or epoch
         result.start = typeof tr.start === "string" ? new Date(tr.start).getTime() : tr.start;
         result.end = typeof tr.end === "string" ? new Date(tr.end).getTime() : tr.end;
         result.raw = { type: "absolute" };
@@ -308,8 +398,8 @@
       if (!graphObj) return false;
 
       // Set absolute time
-      graphObj.start = new Date(timeRange.start).toISOString();
-      graphObj.end = new Date(timeRange.end).toISOString();
+      graphObj.start = toJSTString(timeRange.start);
+      graphObj.end = toJSTString(timeRange.end);
 
       var newGraphStr = window.JSURL.stringify(graphObj);
       var newHash = hash.replace(/graph=[^&;]*/, "graph=" + newGraphStr);
@@ -323,17 +413,31 @@
 
   /**
    * Inject time range into CloudWatch Logs Insights URL.
+   * Handles both Format A (queryDetail=<$-encoded>) and Format B (queryDetail$3D<raw JSURL>).
    */
   function injectCloudWatchLogsInsights(timeRange) {
     try {
       var hash = window.location.hash;
-      var qdMatch = hash.match(/queryDetail=([^&;]*)/);
-      if (!qdMatch) return false;
+      var obj = null;
+      var isFormatB = false;
 
-      // Decode existing queryDetail
-      var encoded = qdMatch[1].replace(/\$/g, "%");
-      var decoded = decodeURIComponent(encoded);
-      var obj = window.JSURL.tryParse(decoded, null);
+      // Detect format and parse existing state
+      var qdMatchA = hash.match(/queryDetail=([^&;]*)/);
+      if (qdMatchA) {
+        var encoded = qdMatchA[1].replace(/\$/g, "%");
+        try {
+          obj = window.JSURL.tryParse(decodeURIComponent(encoded), null);
+        } catch (e) {}
+      }
+
+      if (!obj) {
+        var qdMatchB = hash.match(/queryDetail\$3D([^&;]*)/i);
+        if (qdMatchB) {
+          obj = window.JSURL.tryParse(qdMatchB[1], null);
+          isFormatB = true;
+        }
+      }
+
       if (!obj) return false;
 
       // Set absolute time (epoch seconds)
@@ -341,14 +445,64 @@
       obj.end = Math.floor(timeRange.end / 1000);
       obj.timeType = "ABSOLUTE";
 
-      // Re-encode: JSURL → encodeURIComponent → replace('%', '$')
       var newJsurl = window.JSURL.stringify(obj);
-      var newEncoded = encodeURIComponent(newJsurl).replace(/%/g, "$");
-      var newHash = hash.replace(/queryDetail=[^&;]*/, "queryDetail=" + newEncoded);
-      window.location.hash = newHash;
+
+      if (isFormatB) {
+        // Format B: queryDetail$3D<raw JSURL>
+        var newHash = hash.replace(/queryDetail\$3D[^&;]*/i, "queryDetail$3D" + newJsurl);
+        window.location.hash = newHash;
+      } else {
+        // Format A: queryDetail=<$-encoded JSURL>
+        var newEncoded = encodeURIComponent(newJsurl).replace(/%/g, "$");
+        var newHash = hash.replace(/queryDetail=[^&;]*/, "queryDetail=" + newEncoded);
+        window.location.hash = newHash;
+      }
       return true;
     } catch (e) {
       console.warn("[TimeKeeper] CloudWatch Logs Insights inject error:", e);
+      return false;
+    }
+  }
+
+  /**
+   * Inject time range into CloudWatch Log Events URL.
+   */
+  function injectCloudWatchLogs(timeRange) {
+    try {
+      var hash = window.location.hash;
+      var startMs = timeRange.start;
+      var endMs = timeRange.end;
+
+      // Detect encoding style: $3F/$3D or literal ?/=
+      var uses$Encoding = hash.includes("$3F") || hash.includes("$3D");
+
+      if (uses$Encoding) {
+        // Replace or append $3F-encoded params
+        var newHash = hash;
+        if (newHash.match(/\$3Fstart\$3D-?\d+/i)) {
+          newHash = newHash.replace(/\$3Fstart\$3D-?\d+/i, "$3Fstart$3D" + startMs);
+        }
+        if (newHash.match(/\$26end\$3D-?\d+/i)) {
+          newHash = newHash.replace(/\$26end\$3D-?\d+/i, "$26end$3D" + endMs);
+        } else if (newHash.includes("$3Fstart$3D")) {
+          // Append end param
+          newHash = newHash.replace(/(\$3Fstart\$3D-?\d+)/i, "$1$26end$3D" + endMs);
+        }
+        window.location.hash = newHash.replace(/^#/, "");
+      } else {
+        // Literal ?/= encoding
+        var normalized = hash;
+        normalized = normalized.replace(/([?&])start=-?\d+/, "$1start=" + startMs);
+        if (normalized.match(/[?&]end=-?\d+/)) {
+          normalized = normalized.replace(/([?&])end=-?\d+/, "$1end=" + endMs);
+        } else {
+          normalized = normalized.replace(/(\?start=-?\d+)/, "$1&end=" + endMs);
+        }
+        window.location.hash = normalized.replace(/^#/, "");
+      }
+      return true;
+    } catch (e) {
+      console.warn("[TimeKeeper] CloudWatch Logs inject error:", e);
       return false;
     }
   }
@@ -358,8 +512,8 @@
    */
   function injectXRay(timeRange) {
     try {
-      var startISO = new Date(timeRange.start).toISOString();
-      var endISO = new Date(timeRange.end).toISOString();
+      var startISO = toJSTString(timeRange.start);
+      var endISO = toJSTString(timeRange.end);
       var newTimeRange = startISO + "~" + endISO;
 
       var url = new URL(window.location.href);
@@ -398,19 +552,16 @@
   function injectCloudWatchGeneric(timeRange) {
     try {
       var hash = window.location.hash;
-      var sepIdx = hash.indexOf(":?");
-      if (sepIdx < 0) return false;
+      var qIdx = hash.indexOf("?~(");
+      if (qIdx < 0) return false;
 
-      var prefix = hash.substring(0, sepIdx + 2); // e.g. "#home:?"
-      var stateStr = hash.substring(sepIdx + 2);
+      var prefix = hash.substring(0, qIdx + 1); // everything up to and including '?'
+      var stateStr = hash.substring(qIdx + 1);
       var stateObj = window.JSURL.tryParse(stateStr, null);
       if (!stateObj) stateObj = {};
 
-      // Set absolute time range as object with ISO strings
-      stateObj.timeRange = {
-        start: new Date(timeRange.start).toISOString(),
-        end: new Date(timeRange.end).toISOString(),
-      };
+      // Use array format [startMs, endMs] — matches CloudWatch's absolute time URL format
+      stateObj.timeRange = [timeRange.start, timeRange.end];
 
       var newStateStr = window.JSURL.stringify(stateObj);
       window.location.hash = prefix.replace(/^#/, "") + newStateStr;
@@ -441,6 +592,9 @@
             break;
           case "cloudwatch-logs-insights":
             timeRange = parseCloudWatchLogsInsights();
+            break;
+          case "cloudwatch-logs":
+            timeRange = parseCloudWatchLogs();
             break;
           case "cloudwatch-generic":
             timeRange = parseCloudWatchGeneric();
@@ -476,6 +630,9 @@
             break;
           case "cloudwatch-logs-insights":
             applied = injectCloudWatchLogsInsights(tr);
+            break;
+          case "cloudwatch-logs":
+            applied = injectCloudWatchLogs(tr);
             break;
           case "cloudwatch-generic":
             applied = injectCloudWatchGeneric(tr);

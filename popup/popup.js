@@ -104,6 +104,7 @@
   var serviceNames = {
     "cloudwatch-metrics": "CW Metrics",
     "cloudwatch-logs-insights": "CW Logs Insights",
+    "cloudwatch-logs": "CW Logs",
     "cloudwatch-generic": "CloudWatch",
     "cloudwatch-other": "CW (limited)",
     "xray": "X-Ray",
@@ -125,7 +126,7 @@
   function updateServiceBadge(service) {
     var name = serviceNames[service] || service;
     $serviceBadge.textContent = name;
-    var supported = ["cloudwatch-metrics", "cloudwatch-logs-insights", "cloudwatch-generic", "xray"];
+    var supported = ["cloudwatch-metrics", "cloudwatch-logs-insights", "cloudwatch-logs", "cloudwatch-generic", "xray"];
     if (supported.indexOf(service) >= 0) {
       $serviceBadge.classList.add("active");
     } else {
