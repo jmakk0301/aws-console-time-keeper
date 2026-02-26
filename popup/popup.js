@@ -42,6 +42,7 @@
       minute: "2-digit",
       second: "2-digit",
       hour12: false,
+      timeZone: "Asia/Tokyo",
     });
   }
 
@@ -81,17 +82,19 @@
   }
 
   function toLocalDatetimeString(epochMs) {
-    var d = new Date(epochMs);
-    // Format: YYYY-MM-DDTHH:MM:SS for datetime-local input
-    var pad = function (n) { return n < 10 ? "0" + n : "" + n; };
-    return (
-      d.getFullYear() + "-" +
-      pad(d.getMonth() + 1) + "-" +
-      pad(d.getDate()) + "T" +
-      pad(d.getHours()) + ":" +
-      pad(d.getMinutes()) + ":" +
-      pad(d.getSeconds())
-    );
+    // Format in JST: YYYY-MM-DDTHH:MM:SS for datetime-local input
+    var parts = new Intl.DateTimeFormat("sv-SE", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+      timeZone: "Asia/Tokyo",
+    }).format(new Date(epochMs));
+    // "sv-SE" gives "YYYY-MM-DD HH:MM:SS" — replace space with T
+    return parts.replace(" ", "T");
   }
 
   // ---------------------------------------------------------------------------
@@ -275,8 +278,9 @@
       return;
     }
 
-    var startMs = new Date(startVal).getTime();
-    var endMs = new Date(endVal).getTime();
+    // Interpret manual input as JST (+09:00)
+    var startMs = new Date(startVal + "+09:00").getTime();
+    var endMs = new Date(endVal + "+09:00").getTime();
 
     if (isNaN(startMs) || isNaN(endMs)) {
       showToast("Invalid date format", "error");
@@ -326,6 +330,21 @@
   $btnApply.addEventListener("click", applyTime);
   $btnClear.addEventListener("click", clearAll);
   $btnManualSave.addEventListener("click", saveManualRange);
+
+  // Click-to-copy on Start/End values
+  function setupCopyable(el) {
+    el.addEventListener("click", function () {
+      var text = el.textContent;
+      if (!text || text === "--") return;
+      navigator.clipboard.writeText(text).then(function () {
+        el.classList.add("copied");
+        showToast("Copied: " + text, "success");
+        setTimeout(function () { el.classList.remove("copied"); }, 1000);
+      });
+    });
+  }
+  setupCopyable($startTime);
+  setupCopyable($endTime);
 
   // ---------------------------------------------------------------------------
   // Initialize

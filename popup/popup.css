@@ -123,6 +123,23 @@ header h1 {
   word-break: break-all;
 }
 
+.time-row .value.copyable {
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 3px;
+  transition: background-color 0.15s;
+}
+
+.time-row .value.copyable:hover {
+  background: var(--aws-orange-dim);
+  color: var(--aws-orange);
+}
+
+.time-row .value.copyable.copied {
+  background: rgba(46, 204, 113, 0.2);
+  color: var(--success);
+}
+
 /* Action Buttons */
 .actions {
   display: flex;
